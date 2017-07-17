@@ -459,9 +459,14 @@ class PartnerAddressBook(ConnectorUnit):
                     company_mapper = get_unit(CompanyImportMapper,
                                               'magento.res.partner')
                     map_record = company_mapper.map_record(magento_record)
+                    session = self.session
+                    partner_binding = session.browse('magento.res.partner',
+                                                     partner_binding_id)
+                    parent = partner_binding.openerp_id.parent_id
                     self.session.write('magento.res.partner',
                                        partner_binding_id,
-                                       map_record.values())
+                                       map_record.values(parent_partner=parent)
+                                       )
                 else:
                     # for B2C individual customers, merge with the main
                     # partner
@@ -509,6 +514,8 @@ class BaseAddressImportMapper(ImportMapper):
 
     @mapping
     def street(self, record):
+        if not record.get('street'):
+            return
         value = record['street']
         lines = [line.strip() for line in value.split('\n') if line.strip()]
         if len(lines) == 1:
@@ -539,9 +546,8 @@ class BaseAddressImportMapper(ImportMapper):
     @only_create
     @mapping
     def company_id(self, record):
-        parent_id = record.get('parent_id')
-        if parent_id:
-            parent = self.session.browse('res.partner', parent_id)
+        parent = self.options.parent_partner
+        if parent:
             if parent.company_id:
                 return {'company_id': parent.company_id.id}
             else:
