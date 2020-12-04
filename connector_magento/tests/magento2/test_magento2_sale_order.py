@@ -141,6 +141,7 @@ class TestSaleOrder(Magento2SyncTestCase):
         backend models (backend, website, store and storeview)
         """
         binding = self._import_sale_order('9')
+        self.assertEqual(binding.pricelist_id.currency_id.name, 'USD')
         self.assertFalse(binding.analytic_account_id)
         default_fp = self.env['account.fiscal.position'].get_fiscal_position(
             binding.partner_id.id, binding.partner_shipping_id.id)
@@ -305,3 +306,28 @@ class TestSaleOrder(Magento2SyncTestCase):
         self.assertEqual(
             cassette.requests[5].uri,
             'http://magento/index.php/rest/V1/orders/12/comments')
+
+    def test_alternate_currency_pricelist(self):
+        """ An order with an alternate currency selects a matching pricelist
+        """
+        # Ensure a Euro pricelist exists
+        self.env.ref('product.list0').copy({
+            'currency_id': self.env.ref('base.EUR').id,
+            'sequence': 999,
+        })
+        binding = self._import_sale_order('13')
+        self.assertEqual(binding.pricelist_id.currency_id.name, 'EUR')
+
+    def test_100_percent_discount(self):
+        """ Test if a 100% discount order is not blocked by rule paid """
+        mode = self.env['account.payment.mode'].search(
+            [('name', '=', 'checkmo')])
+        mode.import_rule = 'paid'
+        binding = self._import_sale_order('17')
+        self.assertFalse(binding.total_amount)
+        # Product line discount is 100 percent
+        self.assertEqual(binding.order_line[0].price_unit, 44)
+        self.assertEqual(binding.order_line[0].discount, 100)
+        # Shipping line discount is included in the unit price
+        self.assertFalse(binding.order_line[1].price_unit)
+        self.assertFalse(binding.order_line[1].discount)
